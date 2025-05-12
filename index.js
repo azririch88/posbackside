@@ -4,12 +4,15 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const WebSocket = require('ws');
+const fetch = require('node-fetch'); // added for webhook sending
 
 const app = express();
 const PORT = 4000;
 
 app.use(cors());
 app.use(bodyParser.json());
+const receivedOrders = []; // to store all incoming orders
+
 
 // In-memory order store
 const orders = {};
@@ -51,6 +54,48 @@ app.post('/confirm/:invoiceId', (req, res) => {
   }
 });
 
+// NEW: Send order to printer (Beeceptor webhook)
+
+const axios = require('axios'); // ADD THIS at the top with your other imports
+
+// NEW: Send order to printer (Beeceptor webhook)
+app.post('/print-order', async (req, res) => {
+  const orderData = req.body;
+  const foodItems = [];
+  const drinkItems = [];
+
+  receivedOrders.push(orderData);
+
+  // Split food and drinks
+  for (const item of orderData.items) {
+    if (item.category === 'food') {
+      foodItems.push(item);
+    } else if (item.category === 'drink') {
+      drinkItems.push(item);
+    }
+  }
+
+  const kitchenWebhookUrl = 'https://printersim.free.beeceptor.com';
+  const barWebhookUrl = 'https://webhook.site/69e56400-de40-4782-82fe-acba2ff35b54';
+
+  try {
+    if (foodItems.length > 0) {
+      const foodOrder = { ...orderData, items: foodItems };
+      await axios.post(kitchenWebhookUrl, foodOrder);
+    }
+
+    if (drinkItems.length > 0) {
+      const drinkOrder = { ...orderData, items: drinkItems };
+      await axios.post(barWebhookUrl, drinkOrder);
+    }
+
+    res.json({ success: true, message: 'Order sent to kitchen and bar printers' });
+  } catch (error) {
+    console.error('Printer webhook error:', error.message);
+    res.status(500).json({ success: false, error: 'Printer webhook failed' });
+  }
+});
+
 // WebSocket server for real-time updates
 const wss = new WebSocket.Server({ port: 4001 });
 wss.on('connection', (ws) => {
@@ -69,4 +114,3 @@ wss.on('connection', (ws) => {
 app.listen(PORT, () => {
   console.log(`POS backend running on http://localhost:${PORT}`);
 });
-
